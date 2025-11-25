@@ -554,7 +554,11 @@ async function main() {
   }
 
   // Write log file
-  const logPath = path.resolve(__dirname, 'import_log.json');
+  // Use /tmp on Vercel (serverless), or __dirname for local development
+  const isVercel = process.env.VERCEL || process.env.VERCEL_ENV;
+  const logPath = isVercel 
+    ? path.join('/tmp', 'import_log.json')
+    : path.resolve(__dirname, 'import_log.json');
   fs.writeFileSync(logPath, JSON.stringify(logResults, null, 2));
   console.log(`\n📝 Log written to: ${logPath}`);
 
@@ -613,8 +617,19 @@ export async function processCsvFile(csvPath, progressCallback = null) {
   }
 
   // Write log file
-  const logPath = path.resolve(__dirname, 'import_log.json');
-  fs.writeFileSync(logPath, JSON.stringify(logResults, null, 2));
+  // Use /tmp on Vercel (serverless), or __dirname for local development
+  const isVercel = process.env.VERCEL || process.env.VERCEL_ENV;
+  const logPath = isVercel 
+    ? path.join('/tmp', 'import_log.json')
+    : path.resolve(__dirname, 'import_log.json');
+  
+  try {
+    fs.writeFileSync(logPath, JSON.stringify(logResults, null, 2));
+  } catch (error) {
+    // If writing fails (e.g., on Vercel), log to console instead
+    console.warn('⚠️  Could not write log file:', error.message);
+    console.log('📝 Log data:', JSON.stringify(logResults, null, 2));
+  }
 
   // Summary
   const endTime = Date.now();
