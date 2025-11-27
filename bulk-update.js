@@ -91,7 +91,6 @@ const WP_SITE = defaultConfig.wp_site;
 const WP_USER = defaultConfig.wp_user;
 const WP_APP_PASSWORD = defaultConfig.wp_app_password;
 const CSV_PATH = process.env.CSV_PATH || 'posts.csv';
-const DEFAULT_STATUS = defaultConfig.default_status;
 const REQUEST_DELAY_MS = defaultConfig.request_delay_ms;
 
 // Validate required config
@@ -154,7 +153,6 @@ function promptForCsvPath(defaultPath) {
     rl.question(promptText, (answer) => {
       rl.close();
       const userInput = answer.trim();
-      // If user pressed Enter, use the suggested default; otherwise use their input
       resolve(userInput || defaultPath || 'posts.csv');
     });
   });
@@ -166,7 +164,6 @@ function promptForCsvPath(defaultPath) {
 async function loadCsv(filePath) {
   return new Promise((resolve, reject) => {
     const results = [];
-    // Support both absolute and relative paths
     const fullPath = path.isAbsolute(filePath) 
       ? filePath 
       : path.resolve(__dirname, filePath);
@@ -225,7 +222,6 @@ async function getOrCreateTerm(name, taxonomy = 'categories', apiInstance = api,
   const config = clientConfig || defaultConfig;
   
   try {
-    // Search for existing term
     const searchResponse = await currentApi.get(`/${taxonomy}`, {
       params: { search: trimmedName, per_page: 100 },
     });
@@ -238,7 +234,6 @@ async function getOrCreateTerm(name, taxonomy = 'categories', apiInstance = api,
       return existing.id;
     }
 
-    // Create new term
     await sleep(config.request_delay_ms);
     const createResponse = await currentApi.post(`/${taxonomy}`, {
       name: trimmedName,
@@ -295,17 +290,16 @@ async function downloadImageFromUrl(imageUrl) {
 }
 
 /**
- * Upload featured image to WordPress media library (from local file or URL)
+ * Upload featured image to WordPress media library
  */
-async function uploadMedia(filePathOrUrl, apiInstance = api) {
+async function uploadMedia(filePathOrUrl, apiInstance = api, clientConfig = null) {
   const currentApi = apiInstance || api;
+  const config = clientConfig || defaultConfig;
   if (!filePathOrUrl || !filePathOrUrl.trim()) return null;
 
   let fileBuffer, fileName, mimeType;
 
-  // Check if it's a URL (starts with http:// or https://)
   if (filePathOrUrl.trim().startsWith('http://') || filePathOrUrl.trim().startsWith('https://')) {
-    // Download from URL
     const downloaded = await downloadImageFromUrl(filePathOrUrl.trim());
     if (!downloaded) return null;
     
@@ -313,7 +307,6 @@ async function uploadMedia(filePathOrUrl, apiInstance = api) {
     fileName = downloaded.fileName;
     mimeType = downloaded.mimeType;
   } else {
-    // Local file path
     const fullPath = path.resolve(__dirname, filePathOrUrl);
     
     if (!fs.existsSync(fullPath)) {
@@ -327,7 +320,6 @@ async function uploadMedia(filePathOrUrl, apiInstance = api) {
   }
 
   try {
-    const config = defaultConfig;
     await sleep(config.request_delay_ms);
     
     const response = await currentApi.post('/media', fileBuffer, {
@@ -350,7 +342,27 @@ async function uploadMedia(filePathOrUrl, apiInstance = api) {
 }
 
 /**
- * Find existing post by slug
+ * Find post by ID
+ */
+async function findPostById(postId, apiInstance = api) {
+  if (!postId) return null;
+
+  const currentApi = apiInstance || api;
+
+  try {
+    const response = await currentApi.get(`/posts/${postId}`);
+    return response.data.id;
+  } catch (error) {
+    if (error.response?.status === 404) {
+      return null;
+    }
+    console.error(`⚠️  Failed to find post by ID "${postId}": ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Find post by slug
  */
 async function findPostBySlug(slug, apiInstance = api) {
   if (!slug || !slug.trim()) return null;
@@ -374,49 +386,42 @@ async function findPostBySlug(slug, apiInstance = api) {
 }
 
 /**
- * Find existing post by title
+ * Find post by title
  */
 async function findPostByTitle(title, apiInstance = api) {
   const currentApi = apiInstance || api;
   if (!title || !title.trim()) return null;
 
   try {
-    // Normalize title for comparison (remove HTML entities, trim, lowercase)
     const normalizeTitle = (str) => {
       if (!str) return '';
-      // Remove HTML entities and tags, then normalize
-      // Handle common HTML entities first, then remove any remaining
       return str
-        .replace(/<[^>]*>/g, '') // Remove HTML tags
-        .replace(/&nbsp;/g, ' ') // Replace &nbsp; with space
-        .replace(/&amp;/g, '&') // Replace &amp; with &
-        .replace(/&quot;/g, '"') // Replace &quot; with "
-        .replace(/&#8217;/g, "'") // Replace &#8217; (right single quotation) with '
-        .replace(/&#8216;/g, "'") // Replace &#8216; (left single quotation) with '
-        .replace(/&#39;/g, "'") // Replace &#39; with '
-        .replace(/&#038;/g, '&') // Replace &#038; with &
-        .replace(/&[^;]+;/g, '') // Remove any other HTML entities
-        .replace(/\s+/g, ' ') // Normalize whitespace
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#8217;/g, "'")
+        .replace(/&#8216;/g, "'")
+        .replace(/&#39;/g, "'")
+        .replace(/&#038;/g, '&')
+        .replace(/&[^;]+;/g, '')
+        .replace(/\s+/g, ' ')
         .toLowerCase()
         .trim();
     };
 
     const normalizedSearchTitle = normalizeTitle(title);
-    console.log(`🔍 Searching for duplicate. Normalized title: "${normalizedSearchTitle}"`);
     
-    // Paginate through ALL posts (including drafts) to check for duplicates
-    // WordPress search API might not return drafts, so we check all posts directly
     let page = 1;
     const perPage = 100;
     let hasMore = true;
-    let totalChecked = 0;
 
     while (hasMore) {
       const response = await currentApi.get('/posts', {
         params: { 
           per_page: perPage,
           page: page,
-          status: 'any', // Include all statuses: publish, draft, private, pending, future
+          status: 'any',
           orderby: 'date',
           order: 'desc'
         },
@@ -427,40 +432,19 @@ async function findPostByTitle(title, apiInstance = api) {
         break;
       }
 
-      totalChecked += response.data.length;
-      console.log(`🔍 Checking page ${page}, ${response.data.length} posts (total checked: ${totalChecked})`);
-
-      // Check each post in this page
       for (const post of response.data) {
-        // Try multiple ways to get the title
         const postTitleRaw = post.title?.rendered || post.title?.raw || post.title || '';
         const postTitleNormalized = normalizeTitle(postTitleRaw);
         
-        // Debug: log posts that might match (to reduce noise but still catch issues)
-        const isMatch = postTitleNormalized === normalizedSearchTitle;
-        const mightMatch = postTitleNormalized.includes('weekend brunch') || 
-                          postTitleNormalized.includes('nafisa') ||
-                          postTitleRaw.toLowerCase().includes('weekend brunch');
-        
-        if (isMatch || mightMatch) {
-          console.log(`  📝 Post ID ${post.id} (${post.status}): "${postTitleRaw}"`);
-          console.log(`     Normalized: "${postTitleNormalized}"`);
-          console.log(`     Search for: "${normalizedSearchTitle}"`);
-          console.log(`     Match: ${isMatch ? '✅ YES - DUPLICATE FOUND!' : '❌ NO'}`);
-        }
-        
-        if (isMatch) {
-          console.log(`✅ FOUND DUPLICATE! Post ID ${post.id} (status: ${post.status}) has matching title: "${postTitleRaw}"`);
+        if (postTitleNormalized === normalizedSearchTitle) {
           return post.id;
         }
       }
 
-      // If we got fewer posts than requested, we've reached the end
       if (response.data.length < perPage) {
         hasMore = false;
       } else {
         page++;
-        // Limit to first 10 pages (1000 posts) to avoid infinite loops
         if (page > 10) {
           console.log(`⚠️  Reached 1000 post limit. Stopping search.`);
           hasMore = false;
@@ -468,19 +452,17 @@ async function findPostByTitle(title, apiInstance = api) {
       }
     }
 
-    console.log(`✅ No duplicate found after checking ${totalChecked} posts`);
     return null;
   } catch (error) {
     console.error(`⚠️  Failed to search for post by title "${title}": ${error.message}`);
-    // Don't throw - return null so we can continue processing other posts
     return null;
   }
 }
 
 /**
- * Create or update a post
+ * Update an existing post
  */
-async function createOrUpdatePost(row, rowNumber, progressCallback = null, apiInstance = api, clientConfig = null) {
+async function updatePost(row, rowNumber, progressCallback = null, apiInstance = api, clientConfig = null) {
   // Use provided API instance or default
   const currentApi = apiInstance || api;
   const config = clientConfig || defaultConfig;
@@ -494,111 +476,136 @@ async function createOrUpdatePost(row, rowNumber, progressCallback = null, apiIn
   };
 
   try {
-    // Validate required fields
-    if (!row.title || !row.title.trim()) {
-      throw new Error('Missing required field: title');
-    }
-    if (!row.content || !row.content.trim()) {
-      throw new Error('Missing required field: content');
+    // Find the post to update - priority: post_id > slug > title
+    let postId = null;
+
+    if (row.post_id?.trim()) {
+      postId = await findPostById(row.post_id.trim(), currentApi);
+      if (!postId) {
+        throw new Error(`Post with ID "${row.post_id}" not found`);
+      }
+    } else if (row.slug?.trim()) {
+      postId = await findPostBySlug(row.slug.trim(), currentApi);
+      if (!postId) {
+        throw new Error(`Post with slug "${row.slug}" not found`);
+      }
+    } else if (row.title?.trim()) {
+      postId = await findPostByTitle(row.title.trim(), currentApi);
+      if (!postId) {
+        throw new Error(`Post with title "${row.title}" not found`);
+      }
+    } else {
+      throw new Error('Missing identifier: must provide post_id, slug, or title');
     }
 
-    // Prepare post data
-    const postData = {
-      title: row.title.trim(),
-      content: row.content.trim(),
-      status: row.status?.trim() || config.default_status,
-    };
+    result.postId = postId;
 
-    // Add optional fields
+    // Get existing post to preserve fields not being updated
+    const existingPostResponse = await currentApi.get(`/posts/${postId}`);
+    const existingPost = existingPostResponse.data;
+
+    // Prepare update data - only include fields that are provided
+    const updateData = {};
+
+    // Update title if provided
+    if (row.title?.trim()) {
+      updateData.title = row.title.trim();
+    }
+
+    // Update content if provided
+    if (row.content?.trim()) {
+      updateData.content = row.content.trim();
+    }
+
+    // Update status if provided
+    if (row.status?.trim()) {
+      updateData.status = row.status.trim();
+    }
+
+    // Update slug if provided
     if (row.slug?.trim()) {
-      postData.slug = row.slug.trim();
+      updateData.slug = row.slug.trim();
     }
+
+    // Update excerpt if provided
     if (row.excerpt?.trim()) {
-      postData.excerpt = row.excerpt.trim();
+      updateData.excerpt = row.excerpt.trim();
     }
 
     // Handle ACF JSON
     if (row.acf_json?.trim()) {
       try {
         const acfData = JSON.parse(row.acf_json);
-        postData.acf = acfData;
+        updateData.acf = acfData;
       } catch (parseError) {
         console.error(`⚠️  Invalid ACF JSON in row ${rowNumber}: ${parseError.message}`);
       }
     }
 
-    // Resolve categories
+    // Resolve categories if provided
     if (row.categories?.trim()) {
       const categoryIds = await resolveTerms(row.categories, 'categories', currentApi, config);
       if (categoryIds.length > 0) {
-        postData.categories = categoryIds;
+        updateData.categories = categoryIds;
       }
     }
 
-    // Resolve tags
+    // Resolve tags if provided
     if (row.tags?.trim()) {
       const tagIds = await resolveTerms(row.tags, 'tags', currentApi, config);
       if (tagIds.length > 0) {
-        postData.tags = tagIds;
+        updateData.tags = tagIds;
       }
     }
 
-    // Upload featured image if provided (supports both local path and URL)
+    // Upload featured image if provided
     const imagePath = row.featured_image_path?.trim() || row.featured_image_url?.trim();
     if (imagePath) {
-      const mediaId = await uploadMedia(imagePath, currentApi);
+      const mediaId = await uploadMedia(imagePath, currentApi, config);
       if (mediaId) {
-        postData.featured_media = mediaId;
+        updateData.featured_media = mediaId;
       }
     }
 
-    // Check for existing post by title first (prevent duplicates)
-    // This check happens BEFORE creating the post to prevent duplicate creation
-    console.log(`[${rowNumber}] 🔍 Checking for duplicate post with title: "${postData.title}"`);
-    const existingPostByTitle = await findPostByTitle(postData.title, currentApi);
-    if (existingPostByTitle) {
-      const errorMsg = `Post with title "${postData.title}" already exists (ID: ${existingPostByTitle}). Duplicate posts are not allowed.`;
-      console.error(`[${rowNumber}] ⚠️  DUPLICATE DETECTED: ${errorMsg}`);
-      throw new Error(errorMsg);
-    }
-    console.log(`[${rowNumber}] ✅ No duplicate found for title: "${postData.title}"`);
-
-    // Check for existing post by slug (idempotency)
-    let existingPostId = null;
-    if (postData.slug) {
-      existingPostId = await findPostBySlug(postData.slug, currentApi);
+    // Check if there's anything to update
+    if (Object.keys(updateData).length === 0) {
+      throw new Error('No fields to update. Provide at least one field to update.');
     }
 
-    // Create or update
+    // Perform the update
     await sleep(config.request_delay_ms);
-
-    if (existingPostId) {
-      // Update existing post
-      const updateResponse = await currentApi.post(`/posts/${existingPostId}`, postData);
-      result.action = 'updated';
-      result.postId = updateResponse.data.id;
-      result.status = updateResponse.data.status;
-      const message = `[${rowNumber}] ✅ updated post ${result.postId}: ${result.title}`;
-      console.log(message);
-      if (progressCallback) progressCallback({ type: 'success', message, rowNumber, postId: result.postId, title: result.title });
-    } else {
-      // Create new post
-      const createResponse = await currentApi.post('/posts', postData);
-      result.action = 'created';
-      result.postId = createResponse.data.id;
-      result.status = createResponse.data.status;
-      const message = `[${rowNumber}] ✅ created post ${result.postId}: ${result.title}`;
-      console.log(message);
-      if (progressCallback) progressCallback({ type: 'success', message, rowNumber, postId: result.postId, title: result.title });
+    const updateResponse = await currentApi.post(`/posts/${postId}`, updateData);
+    
+    result.action = 'updated';
+    result.postId = updateResponse.data.id;
+    result.status = updateResponse.data.status;
+    const message = `[${rowNumber}] ✅ Updated post ${result.postId}: ${result.title}`;
+    console.log(message);
+    if (progressCallback) {
+      progressCallback({ 
+        type: 'success', 
+        message, 
+        rowNumber, 
+        postId: result.postId, 
+        title: result.title 
+      });
     }
   } catch (error) {
     result.error = error.message;
     if (error.response?.data) {
       result.error = `${error.message}: ${JSON.stringify(error.response.data)}`;
     }
-    const errorMessage = `[${rowNumber}] ❌ failed: ${result.title} - ${result.error}`;
+    const errorMessage = `[${rowNumber}] ❌ Failed: ${result.title} - ${result.error}`;
     console.error(errorMessage);
-    if (progressCallback) progressCallback({ type: 'error', message: errorMessage, rowNumber, title: result.title, error: result.error });
+    if (progressCallback) {
+      progressCallback({ 
+        type: 'error', 
+        message: errorMessage, 
+        rowNumber, 
+        title: result.title, 
+        error: result.error 
+      });
+    }
   }
 
   return result;
@@ -608,32 +615,26 @@ async function createOrUpdatePost(row, rowNumber, progressCallback = null, apiIn
  * Main execution
  */
 async function main() {
-  console.log('🚀 WordPress Bulk Uploader\n');
+  console.log('🔄 WordPress Bulk Updater\n');
   console.log(`Site: ${WP_SITE}`);
-  console.log(`Default Status: ${DEFAULT_STATUS}`);
   console.log(`Request Delay: ${REQUEST_DELAY_MS}ms`);
 
-  // Get CSV path: command-line argument > interactive prompt (with env as suggestion) > default
   let csvPath;
   
-  // If command-line argument provided, use it directly (skip prompt)
   if (process.argv[2]) {
     csvPath = process.argv[2];
     console.log(`\nCSV: ${csvPath} (from command-line argument)`);
   } else {
-    // Always prompt for file path, showing env variable as suggestion if it exists
     const suggestedPath = process.env.CSV_PATH || 'posts.csv';
     csvPath = await promptForCsvPath(suggestedPath);
     console.log(`\nCSV: ${csvPath}`);
   }
 
-  // Check connectivity
   const isConnected = await checkConnectivity();
   if (!isConnected) {
     process.exit(1);
   }
 
-  // Load CSV
   console.log(`📖 Loading CSV: ${csvPath}...`);
   let rows;
   try {
@@ -644,7 +645,7 @@ async function main() {
     console.error(`\n💡 Tips:`);
     console.error(`   - Use absolute path: C:\\Users\\YourName\\Documents\\file.csv`);
     console.error(`   - Use relative path: posts.csv (from script directory)`);
-    console.error(`   - Or pass as argument: npm run upload "C:\\path\\to\\file.csv"`);
+    console.error(`   - Or pass as argument: npm run update "C:\\path\\to\\file.csv"`);
     process.exit(1);
   }
 
@@ -653,23 +654,19 @@ async function main() {
     process.exit(0);
   }
 
-  // Process each row
-  console.log('📤 Starting upload process...\n');
+  console.log('📤 Starting update process...\n');
   for (let i = 0; i < rows.length; i++) {
-    const result = await createOrUpdatePost(rows[i], i + 1, null, api, defaultConfig);
+    const result = await updatePost(rows[i], i + 1, null, api, defaultConfig);
     logResults.push(result);
   }
 
-  // Write log file
-  // Use /tmp on Vercel (serverless), or __dirname for local development
   const isVercel = process.env.VERCEL || process.env.VERCEL_ENV;
   const logPath = isVercel 
-    ? path.join('/tmp', 'import_log.json')
-    : path.resolve(__dirname, 'import_log.json');
+    ? path.join('/tmp', 'update_log.json')
+    : path.resolve(__dirname, 'update_log.json');
   fs.writeFileSync(logPath, JSON.stringify(logResults, null, 2));
   console.log(`\n📝 Log written to: ${logPath}`);
 
-  // Summary
   const endTime = Date.now();
   const duration = ((endTime - startTime) / 1000).toFixed(2);
   const successCount = logResults.filter(r => !r.error).length;
@@ -687,22 +684,16 @@ async function main() {
 }
 
 /**
- * Process CSV file (exported for use by web server)
+ * Process CSV file for updates (exported for use by web server)
  */
-export async function processCsvFile(csvPath, progressCallback = null, clientId = null) {
-  // Reset logging for new run
+export async function processUpdateCsvFile(csvPath, progressCallback = null, clientId = null) {
   logResults = [];
   startTime = Date.now();
 
   // Get client configuration
   const clientConfig = getClientConfig(clientId);
   const clientApi = createApiInstance(clientConfig);
-  
-  // Override the global api instance for this run
-  const originalApi = api;
-  Object.setPrototypeOf(clientApi, api);
 
-  // Check connectivity
   if (progressCallback) progressCallback({ type: 'info', message: `🔍 Checking WordPress REST API connectivity for ${clientConfig.name}...` });
   const isConnected = await checkConnectivityWithApi(clientApi, clientConfig.wp_site);
   if (!isConnected) {
@@ -710,7 +701,6 @@ export async function processCsvFile(csvPath, progressCallback = null, clientId 
   }
   if (progressCallback) progressCallback({ type: 'info', message: `✅ WordPress REST API is accessible for ${clientConfig.name}` });
 
-  // Load CSV
   if (progressCallback) progressCallback({ type: 'info', message: '📖 Loading CSV file...' });
   let rows;
   try {
@@ -723,30 +713,25 @@ export async function processCsvFile(csvPath, progressCallback = null, clientId 
     throw new Error('CSV file is empty');
   }
   if (progressCallback) progressCallback({ type: 'info', message: `✅ Loaded ${rows.length} row(s)` });
-  if (progressCallback) progressCallback({ type: 'info', message: '📤 Starting upload process...' });
+  if (progressCallback) progressCallback({ type: 'info', message: '📤 Starting update process...' });
 
-  // Process each row with client-specific config
   for (let i = 0; i < rows.length; i++) {
-    const result = await createOrUpdatePost(rows[i], i + 1, progressCallback, clientApi, clientConfig);
+    const result = await updatePost(rows[i], i + 1, progressCallback, clientApi, clientConfig);
     logResults.push(result);
   }
 
-  // Write log file
-  // Use /tmp on Vercel (serverless), or __dirname for local development
   const isVercel = process.env.VERCEL || process.env.VERCEL_ENV;
   const logPath = isVercel 
-    ? path.join('/tmp', 'import_log.json')
-    : path.resolve(__dirname, 'import_log.json');
+    ? path.join('/tmp', 'update_log.json')
+    : path.resolve(__dirname, 'update_log.json');
   
   try {
     fs.writeFileSync(logPath, JSON.stringify(logResults, null, 2));
   } catch (error) {
-    // If writing fails (e.g., on Vercel), log to console instead
     console.warn('⚠️  Could not write log file:', error.message);
     console.log('📝 Log data:', JSON.stringify(logResults, null, 2));
   }
 
-  // Summary
   const endTime = Date.now();
   const duration = ((endTime - startTime) / 1000).toFixed(2);
   const successCount = logResults.filter(r => !r.error).length;
@@ -763,7 +748,7 @@ export async function processCsvFile(csvPath, progressCallback = null, clientId 
 }
 
 // Run CLI version if called directly
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.includes('bulk-upload.js')) {
+if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.includes('bulk-update.js')) {
   main().catch(error => {
     console.error('❌ Fatal error:', error.message);
     process.exit(1);

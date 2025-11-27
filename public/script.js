@@ -6,55 +6,17 @@ const progressText = document.getElementById('progressText');
 const resultSection = document.getElementById('resultSection');
 const errorSection = document.getElementById('errorSection');
 const errorMessage = document.getElementById('errorMessage');
+const modeUpload = document.getElementById('modeUpload');
+const modeUpdate = document.getElementById('modeUpdate');
+const actionText = document.getElementById('actionText');
+const clientSelector = document.getElementById('clientSelector');
+const clientSelect = document.getElementById('clientSelect');
 
 const fileLabel = document.getElementById('fileLabel');
 const fileText = document.getElementById('fileText');
 const selectedFileInfo = document.getElementById('selectedFileInfo');
 const selectedFileName = document.getElementById('selectedFileName');
 const clearFileBtn = document.getElementById('clearFileBtn');
-
-const clientSelect = document.getElementById('clientSelect');
-const selectedClientInput = document.getElementById('selectedClient');
-
-// Load available clients on page load
-async function loadClients() {
-    try {
-        const response = await fetch('/api/clients', {
-            credentials: 'include'
-        });
-        const data = await response.json();
-        
-        clientSelect.innerHTML = '';
-        if (data.clients && data.clients.length > 0) {
-            data.clients.forEach(client => {
-                const option = document.createElement('option');
-                option.value = client.key;
-                option.textContent = client.name;
-                clientSelect.appendChild(option);
-            });
-            
-            // Set default client
-            selectedClientInput.value = data.clients[0].key;
-        } else {
-            // Fallback if no clients found
-            const option = document.createElement('option');
-            option.value = 'default';
-            option.textContent = 'Default';
-            clientSelect.appendChild(option);
-        }
-    } catch (error) {
-        console.error('Error loading clients:', error);
-        clientSelect.innerHTML = '<option value="default">Default</option>';
-    }
-}
-
-// Update client selection
-clientSelect.addEventListener('change', (e) => {
-    selectedClientInput.value = e.target.value;
-});
-
-// Load clients when page loads
-loadClients();
 
 // Show selected file name and lock selection
 fileInput.addEventListener('change', (e) => {
@@ -94,98 +56,164 @@ clearFileBtn.addEventListener('click', (e) => {
     }
 });
 
+// Load available clients on page load
+async function loadClients() {
+  try {
+    const response = await fetch('/api/clients', {
+      credentials: 'include'
+    });
+    const data = await response.json();
+    
+    if (data.success && data.clients && data.clients.length > 0) {
+      // Show client selector
+      clientSelector.style.display = 'block';
+      
+      // Clear existing options
+      clientSelect.innerHTML = '';
+      
+      // Add default option
+      const defaultOption = document.createElement('option');
+      defaultOption.value = '';
+      defaultOption.textContent = '-- Select a WordPress Site --';
+      clientSelect.appendChild(defaultOption);
+      
+      // Add client options
+      data.clients.forEach(client => {
+        const option = document.createElement('option');
+        option.value = client.id;
+        option.textContent = `${client.name} (${client.wp_site})`;
+        clientSelect.appendChild(option);
+      });
+    } else {
+      // Hide client selector if no clients or single client mode
+      clientSelector.style.display = 'none';
+    }
+  } catch (error) {
+    console.error('Failed to load clients:', error);
+    // Hide client selector on error
+    clientSelector.style.display = 'none';
+  }
+}
+
+// Load clients when page loads
+loadClients();
+
+// Update action text based on mode
+function updateActionText() {
+  if (modeUpdate.checked) {
+    actionText.textContent = 'Update & Process';
+    uploadBtn.querySelector('i').className = 'fas fa-edit';
+  } else {
+    actionText.textContent = 'Upload & Process';
+    uploadBtn.querySelector('i').className = 'fas fa-upload';
+  }
+}
+
+// Listen for mode changes
+modeUpload.addEventListener('change', updateActionText);
+modeUpdate.addEventListener('change', updateActionText);
+
 // Handle form submission
 form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const file = fileInput.files[0];
-    if (!file) {
-        showError('<i class="fas fa-exclamation-circle"></i> Please select a CSV file before uploading');
-        // Scroll to error section
-        errorSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // Highlight the file input area
-        const fileLabel = document.getElementById('fileLabel');
-        if (fileLabel) {
-            fileLabel.style.borderColor = '#dc3545';
-            fileLabel.style.animation = 'shake 0.5s';
-            setTimeout(() => {
-                fileLabel.style.borderColor = '#000000';
-                fileLabel.style.animation = '';
-            }, 500);
-        }
-        return;
+  e.preventDefault();
+  
+  const file = fileInput.files[0];
+  if (!file) {
+    showError('<i class="fas fa-exclamation-circle"></i> Please select a CSV file before uploading');
+    // Scroll to error section
+    errorSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Highlight the file input area
+    const fileLabel = document.getElementById('fileLabel');
+    if (fileLabel) {
+      fileLabel.style.borderColor = '#dc3545';
+      fileLabel.style.animation = 'shake 0.5s';
+      setTimeout(() => {
+        fileLabel.style.borderColor = '#000000';
+        fileLabel.style.animation = '';
+      }, 500);
     }
+    return;
+  }
 
-    // Hide previous results/errors
-    resultSection.style.display = 'none';
-    errorSection.style.display = 'none';
-    
-    // Lock file input during upload
-    fileInput.disabled = true;
-    
-    // Show progress
-    progressSection.style.display = 'block';
-    progressText.textContent = '';
-    const progressMessages = document.getElementById('progressMessages');
-    if (progressMessages) {
-        progressMessages.innerHTML = '';
-    }
-    
-    // Disable form
-    uploadBtn.disabled = true;
-    uploadBtn.querySelector('.btn-text').style.display = 'none';
-    uploadBtn.querySelector('.btn-loader').style.display = 'inline';
+  // Determine endpoint based on mode
+  const isUpdateMode = modeUpdate.checked;
+  const endpoint = isUpdateMode ? '/update' : '/upload';
 
-    try {
-        // Generate session ID and connect to SSE FIRST
-        const sessionId = Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9);
-        const eventSource = connectToProgress(sessionId);
-        
+  // Hide previous results/errors
+  resultSection.style.display = 'none';
+  errorSection.style.display = 'none';
+  
+  // Lock file input during upload
+  fileInput.disabled = true;
+  
+  // Show progress
+  progressSection.style.display = 'block';
+  progressText.textContent = '';
+  const progressMessages = document.getElementById('progressMessages');
+  if (progressMessages) {
+    progressMessages.innerHTML = '';
+  }
+  
+  // Disable form
+  uploadBtn.disabled = true;
+  uploadBtn.querySelector('.btn-text').style.display = 'none';
+  uploadBtn.querySelector('.btn-loader').style.display = 'inline';
+
+  try {
+    // Generate session ID and connect to SSE FIRST
+    const sessionId = Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9);
+    const eventSource = connectToProgress(sessionId);
+    
         const formData = new FormData();
         formData.append('csvfile', file);
         formData.append('sessionId', sessionId);
-        formData.append('client', selectedClientInput.value); // Add client selection
+        
+        // Add client ID if selected
+        const selectedClientId = clientSelect.value;
+        if (selectedClientId) {
+          formData.append('clientId', selectedClientId);
+        }
 
-        const response = await fetch('/upload', {
-            method: 'POST',
-            body: formData,
-            credentials: 'include' // Include cookies for authentication
-        });
-        
-        const data = await response.json();
-        
-        // Close SSE connection after processing is complete
-        if (eventSource) {
-            setTimeout(() => {
-                eventSource.close();
-            }, 1000);
-        }
-        
-        progressText.textContent = 'Processing complete!';
-
-        if (data.success) {
-            setTimeout(() => {
-                showResults(data.result);
-            }, 500);
-        } else {
-            showError(data.error || 'Upload failed');
-        }
-    } catch (error) {
-        showError('Error: ' + error.message);
-    } finally {
-        // Re-enable form
-        uploadBtn.disabled = false;
-        uploadBtn.querySelector('.btn-text').style.display = 'inline';
-        uploadBtn.querySelector('.btn-loader').style.display = 'none';
-        progressSection.style.display = 'none';
-        
-        // Re-enable file input after upload completes
-        if (fileInput.files.length > 0) {
-            fileInput.disabled = true; // Keep disabled if file is still selected
-        } else {
-            fileInput.disabled = false;
-        }
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include' // Include cookies for authentication
+    });
+    
+    const data = await response.json();
+    
+    // Close SSE connection after processing is complete
+    if (eventSource) {
+      setTimeout(() => {
+        eventSource.close();
+      }, 1000);
     }
+    
+    progressText.textContent = 'Processing complete!';
+
+    if (data.success) {
+      setTimeout(() => {
+        showResults(data.result);
+      }, 500);
+    } else {
+      showError(data.error || (isUpdateMode ? 'Update failed' : 'Upload failed'));
+    }
+  } catch (error) {
+    showError('Error: ' + error.message);
+  } finally {
+    // Re-enable form
+    uploadBtn.disabled = false;
+    uploadBtn.querySelector('.btn-text').style.display = 'inline';
+    uploadBtn.querySelector('.btn-loader').style.display = 'none';
+    progressSection.style.display = 'none';
+    
+    // Re-enable file input after upload completes
+    if (fileInput.files.length > 0) {
+      fileInput.disabled = true; // Keep disabled if file is still selected
+    } else {
+      fileInput.disabled = false;
+    }
+  }
 });
 
 function showResults(result) {

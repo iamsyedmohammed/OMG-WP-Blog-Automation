@@ -5,7 +5,8 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
-import { processCsvFile } from './bulk-upload.js';
+import { processCsvFile, getAvailableClients as getUploadClients } from './bulk-upload.js';
+import { processUpdateCsvFile, getAvailableClients as getUpdateClients } from './bulk-update.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -137,8 +138,10 @@ function requireAuth(req, res, next) {
   }
 
   // No valid session - redirect to login or return 401 for API calls
-  if (req.path.startsWith('/api/') || 
+  // Allow /api/clients without auth (it's safe, just returns available clients)
+  if ((req.path.startsWith('/api/') && req.path !== '/api/clients') || 
       req.path === '/upload' || 
+      req.path === '/update' ||
       req.path.startsWith('/progress/') ||
       req.path.endsWith('.json')) {
     return res.status(401).json({ error: 'Authentication required' });
@@ -311,71 +314,27 @@ function broadcastProgress(sessionId, progress) {
   }
 }
 
-// Helper function to load clients config (same logic as bulk-upload.js)
-function loadClientsConfig() {
-  // First, try to load from environment variable (CLIENTS_CONFIG)
-  if (process.env.CLIENTS_CONFIG) {
-    try {
-      return JSON.parse(process.env.CLIENTS_CONFIG);
-    } catch (error) {
-      console.error('❌ Failed to parse CLIENTS_CONFIG environment variable:', error.message);
-      console.error('   Falling back to clients.json file...');
-    }
-  }
-  
-  // Fallback to clients.json file
-  const clientsPath = path.join(__dirname, 'clients.json');
-  if (!fs.existsSync(clientsPath)) {
-    return {};
-  }
-  try {
-    return JSON.parse(fs.readFileSync(clientsPath, 'utf-8'));
-  } catch (error) {
-    console.error('❌ Failed to parse clients.json:', error.message);
-    return {};
-  }
-}
-
-// Add endpoint to get available clients
-app.get('/api/clients', requireAuth, (req, res) => {
-  try {
-    const clients = loadClientsConfig();
-    if (!clients || Object.keys(clients).length === 0) {
-      return res.json({ clients: [] });
-    }
-    // Return only client keys and names (not sensitive data)
-    const clientList = Object.keys(clients).map(key => ({
-      key: key,
-      name: clients[key].name || key
-    }));
-    res.json({ clients: clientList });
-  } catch (error) {
-    console.error('Error loading clients:', error);
-    res.status(500).json({ error: 'Failed to load clients' });
-  }
-});
-
 // Upload and process CSV
 app.post('/upload', upload.single('csvfile'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
-  // Get sessionId and client from form data
+  // Get sessionId and clientId from form data or generate one
   const sessionId = req.body.sessionId || Date.now().toString();
-  const clientKey = req.body.client || 'default'; // Get client from form data
+  const clientId = req.body.clientId || null;
 
   try {
     const csvPath = req.file.path;
-    console.log(`Processing uploaded file: ${csvPath} for client: ${clientKey}`);
+    console.log(`Processing uploaded file: ${csvPath}${clientId ? ` for client: ${clientId}` : ''}`);
     
     // Progress callback - broadcast immediately to SSE connections
     const progressCallback = (progress) => {
       broadcastProgress(sessionId, progress);
     };
     
-    // Process the CSV file using the existing bulk upload logic with client selection
-    const result = await processCsvFile(csvPath, progressCallback, clientKey);
+    // Process the CSV file using the existing bulk upload logic
+    const result = await processCsvFile(csvPath, progressCallback, clientId);
     
     // Clean up uploaded file after processing
     fs.unlinkSync(csvPath);
@@ -398,6 +357,62 @@ app.post('/upload', upload.single('csvfile'), async (req, res) => {
       error: error.message || 'An error occurred during upload',
       sessionId: sessionId
     });
+  }
+});
+
+// Update existing posts from CSV
+app.post('/update', upload.single('csvfile'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  // Get sessionId and clientId from form data or generate one
+  const sessionId = req.body.sessionId || Date.now().toString();
+  const clientId = req.body.clientId || null;
+
+  try {
+    const csvPath = req.file.path;
+    console.log(`Processing update file: ${csvPath}${clientId ? ` for client: ${clientId}` : ''}`);
+    
+    // Progress callback - broadcast immediately to SSE connections
+    const progressCallback = (progress) => {
+      broadcastProgress(sessionId, progress);
+    };
+    
+    // Process the CSV file using the bulk update logic
+    const result = await processUpdateCsvFile(csvPath, progressCallback, clientId);
+    
+    // Clean up uploaded file after processing
+    fs.unlinkSync(csvPath);
+    
+    res.json({
+      success: true,
+      message: 'Update completed successfully',
+      result: result,
+      sessionId: sessionId
+    });
+  } catch (error) {
+    // Clean up uploaded file on error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    
+    console.error('Update error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'An error occurred during update',
+      sessionId: sessionId
+    });
+  }
+});
+
+// Get available clients endpoint
+app.get('/api/clients', (req, res) => {
+  try {
+    const clients = getUploadClients();
+    res.json({ success: true, clients });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

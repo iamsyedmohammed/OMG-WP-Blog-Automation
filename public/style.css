@@ -128,58 +128,107 @@ body::before {
     font-size: 1em;
 }
 
-.client-selector-section {
-    padding: 30px 40px;
+.upload-section {
+    padding: 50px 40px;
     background: #f0f8f0;
     border-bottom: 2px solid #000000;
 }
 
+.mode-selector {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 30px;
+    justify-content: center;
+}
+
+.mode-option {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 15px 20px;
+    background: #ffffff;
+    border: 3px solid #000000;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 600;
+    color: #000000;
+}
+
+.mode-option:hover {
+    background: #f0f0f0;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.mode-option input[type="radio"] {
+    display: none;
+}
+
+.mode-option input[type="radio"]:checked + span {
+    color: #dc3545;
+}
+
+.mode-option:has(input[type="radio"]:checked) {
+    background: #f8d7da;
+    border-color: #dc3545;
+    box-shadow: 0 4px 15px rgba(220, 53, 69, 0.2);
+}
+
+.mode-option span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: color 0.3s ease;
+}
+
+.mode-option i {
+    font-size: 1.2em;
+}
+
+.client-selector {
+    margin-bottom: 25px;
+    padding: 15px;
+    background: #ffffff;
+    border: 2px solid #000000;
+    border-radius: 12px;
+}
+
 .client-label {
     display: block;
-    margin-bottom: 12px;
-    font-weight: 700;
+    margin-bottom: 10px;
+    font-weight: 600;
     color: #000000;
-    font-size: 1.1em;
+    font-size: 1em;
 }
 
 .client-label i {
-    color: #dc3545;
     margin-right: 8px;
+    color: #dc3545;
 }
 
 .client-select {
     width: 100%;
-    padding: 15px 20px;
-    border: 3px solid #000000;
-    border-radius: 12px;
-    font-size: 1.1em;
+    padding: 12px 15px;
+    border: 2px solid #000000;
+    border-radius: 8px;
     background: #ffffff;
-    cursor: pointer;
-    font-weight: 600;
     color: #000000;
+    font-size: 1em;
+    font-weight: 500;
+    cursor: pointer;
     transition: all 0.3s ease;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23000000' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 15px center;
-    background-size: 12px;
-    padding-right: 45px;
+}
+
+.client-select:hover {
+    border-color: #dc3545;
+    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.1);
 }
 
 .client-select:focus {
     outline: none;
     border-color: #dc3545;
-    box-shadow: 0 0 0 4px rgba(220, 53, 69, 0.1);
-}
-
-.client-select:hover {
-    border-color: #dc3545;
-}
-
-.upload-section {
-    padding: 50px 40px;
-    background: #f0f8f0;
-    border-bottom: 2px solid #000000;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
 }
 
 .file-input-wrapper {
@@ -666,20 +715,6 @@ tr:hover {
 
     .header p {
         font-size: 1em;
-    }
-
-    .client-selector-section {
-        padding: 25px 20px;
-    }
-
-    .client-label {
-        font-size: 1em;
-    }
-
-    .client-select {
-        padding: 12px 15px;
-        font-size: 1em;
-        padding-right: 40px;
     }
 
     .upload-section {

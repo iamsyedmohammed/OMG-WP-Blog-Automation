@@ -4,13 +4,9 @@
 .env.*.local
 # Note: .env.example should be committed (it's a template)
 
-# Client configurations (contains sensitive credentials)
-clients.json
-clients.json.local
-clients.*.local
-
 # Logs
 import_log.json
+update_log.json
 *.log
 npm-debug.log*
 yarn-debug.log*

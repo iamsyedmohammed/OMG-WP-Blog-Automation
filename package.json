@@ -6,6 +6,7 @@
   "main": "bulk-upload.js",
   "scripts": {
     "upload": "node bulk-upload.js",
+    "update": "node bulk-update.js",
     "server": "node server.js",
     "start": "node server.js",
     "list": "node list-posts.js",

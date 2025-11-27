@@ -6,7 +6,8 @@ A production-ready Node.js command-line tool that reads a CSV file of blog posts
 
 - ✅ **Web Interface** - Easy-to-use browser-based upload interface
 - ✅ **Command-Line Tool** - Traditional CLI for automation
-- ✅ Bulk upload posts from CSV
+- ✅ **Bulk Upload** - Create new posts from CSV
+- ✅ **Bulk Update** - Update existing posts from CSV (NEW!)
 - ✅ Idempotent operations (update if slug exists, else create)
 - ✅ Automatic category/tag creation
 - ✅ Featured image upload support (local files and URLs)
@@ -78,14 +79,16 @@ AUTH_PASSWORD=change-this-to-secure    # Password for web interface login (use s
 
 ## CSV Format
 
+### For Uploading (Creating New Posts)
+
 Your CSV file should have the following columns:
 
-### Required Columns
+#### Required Columns
 
 - `title` - Post title (required)
 - `content` - Post content, HTML allowed (required)
 
-### Optional Columns
+#### Optional Columns
 
 - `status` - Post status: `draft`, `publish`, `private`, or `pending` (defaults to `DEFAULT_STATUS` from `.env`)
 - `categories` - Comma-separated category names (e.g., "Tutorials,WordPress")
@@ -93,15 +96,55 @@ Your CSV file should have the following columns:
 - `slug` - Custom URL slug (if not provided, WordPress will generate one)
 - `excerpt` - Post excerpt
 - `featured_image_path` - Local file path to featured image (relative to script directory)
+- `featured_image_url` - URL to featured image (alternative to `featured_image_path`)
 - `acf_json` - JSON string for ACF fields (e.g., `{"field_name": "value"}`)
 
-### Example CSV
+#### Example Upload CSV
 
 ```csv
 title,content,status,categories,tags,slug,excerpt,featured_image_path,acf_json
 "My First Post","<p>This is the content.</p>",draft,"Tutorials",beginner,my-first-post,"A great post",,
 "Another Post","<p>More content here.</p>",publish,"News,Updates",news,another-post,"Another great post",images/featured.jpg,"{""author"": ""John Doe""}"
 ```
+
+### For Updating (Existing Posts)
+
+When updating posts, you need to identify which post to update. You can use one of these identifiers:
+
+#### Required: Post Identifier (choose one)
+
+- `post_id` - WordPress post ID (most reliable)
+- `slug` - Post slug/permalink
+- `title` - Post title (must match exactly)
+
+#### Optional: Fields to Update
+
+Only include the fields you want to update. Fields not included will remain unchanged:
+
+- `title` - Update post title
+- `content` - Update post content
+- `status` - Update post status
+- `slug` - Update post slug
+- `excerpt` - Update post excerpt
+- `categories` - Update categories (comma-separated)
+- `tags` - Update tags (comma-separated)
+- `featured_image_path` - Update featured image (local path)
+- `featured_image_url` - Update featured image (URL)
+- `acf_json` - Update ACF fields (JSON string)
+
+#### Example Update CSV
+
+```csv
+post_id,title,content,status,categories
+123,"Updated Title","<p>Updated content here.</p>",publish,"Tutorials,WordPress"
+,,"<p>Only updating content for this post</p>,,,"News"
+456,,,draft,
+```
+
+**Note:** In the update CSV:
+- Row 1: Updates post ID 123 with new title, content, status, and categories
+- Row 2: Updates post by slug (empty post_id) - only updates content and categories
+- Row 3: Updates post ID 456 - only changes status to draft (other fields unchanged)
 
 ## Usage
 
@@ -116,11 +159,16 @@ npm start
 ```
 
 2. Open your browser and navigate to: `http://localhost:3000`
-3. Click "Choose CSV File" and select your CSV file
-4. Click "Upload & Process"
-5. View results in the browser
+3. Choose your mode:
+   - **Create New Posts** - For uploading new blog posts
+   - **Update Existing Posts** - For updating existing blog posts
+4. Click "Choose CSV File" and select your CSV file
+5. Click "Upload & Process" or "Update & Process" (depending on mode)
+6. View results in the browser
 
 ### Command-Line Interface
+
+#### Uploading New Posts
 
 1. Prepare your CSV file (see format above)
 2. Run the uploader:
@@ -135,12 +183,27 @@ The script will prompt you for the CSV file path, or you can provide it as an ar
 npm run upload "C:\path\to\your\file.csv"
 ```
 
-The script will:
+#### Updating Existing Posts
+
+1. Prepare your CSV file with post identifiers and fields to update (see format above)
+2. Run the updater:
+
+```bash
+npm run update
+```
+
+Or provide the CSV path as an argument:
+
+```bash
+npm run update "C:\path\to\your\update-file.csv"
+```
+
+Both scripts will:
 1. Check WordPress REST API connectivity
 2. Load and parse your CSV file
 3. Process each row (create/update posts, upload images, create terms)
 4. Display progress in the console
-5. Generate `import_log.json` with detailed results
+5. Generate log files (`import_log.json` for uploads, `update_log.json` for updates) with detailed results
 
 ## Output
 
