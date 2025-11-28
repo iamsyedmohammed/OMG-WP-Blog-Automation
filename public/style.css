@@ -194,6 +194,26 @@ body::before {
     border-radius: 12px;
 }
 
+.single-client-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 0;
+}
+
+.single-client-display i {
+    font-size: 1.5em;
+    color: #dc3545;
+}
+
+.single-client-display span {
+    font-size: 1.3em;
+    font-weight: 700;
+    color: #000000;
+    letter-spacing: 0.5px;
+}
+
 .client-label {
     display: block;
     margin-bottom: 10px;

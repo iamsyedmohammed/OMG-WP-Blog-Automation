@@ -6,9 +6,6 @@ const progressText = document.getElementById('progressText');
 const resultSection = document.getElementById('resultSection');
 const errorSection = document.getElementById('errorSection');
 const errorMessage = document.getElementById('errorMessage');
-const modeUpload = document.getElementById('modeUpload');
-const modeUpdate = document.getElementById('modeUpdate');
-const actionText = document.getElementById('actionText');
 const clientSelector = document.getElementById('clientSelector');
 const clientSelect = document.getElementById('clientSelect');
 
@@ -56,6 +53,10 @@ clearFileBtn.addEventListener('click', (e) => {
     }
 });
 
+const singleClientDisplay = document.getElementById('singleClientDisplay');
+const singleClientName = document.getElementById('singleClientName');
+const multiClientSelector = document.getElementById('multiClientSelector');
+
 // Load available clients on page load
 async function loadClients() {
   try {
@@ -65,27 +66,46 @@ async function loadClients() {
     const data = await response.json();
     
     if (data.success && data.clients && data.clients.length > 0) {
-      // Show client selector
+      // Show client selector container
       clientSelector.style.display = 'block';
       
       // Clear existing options
       clientSelect.innerHTML = '';
       
-      // Add default option
-      const defaultOption = document.createElement('option');
-      defaultOption.value = '';
-      defaultOption.textContent = '-- Select a WordPress Site --';
-      clientSelect.appendChild(defaultOption);
-      
-      // Add client options
-      data.clients.forEach(client => {
+      // If only one client, show the name prominently (no dropdown)
+      if (data.clients.length === 1) {
+        const client = data.clients[0];
+        singleClientDisplay.style.display = 'flex';
+        singleClientName.textContent = client.name;
+        multiClientSelector.style.display = 'none';
+        
+        // Set hidden value for form submission
         const option = document.createElement('option');
         option.value = client.id;
-        option.textContent = `${client.name} (${client.wp_site})`;
+        option.textContent = client.name;
+        option.selected = true;
         clientSelect.appendChild(option);
-      });
+      } else {
+        // Multiple clients - show dropdown
+        singleClientDisplay.style.display = 'none';
+        multiClientSelector.style.display = 'block';
+        
+        // Add default option
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = '-- Select a WordPress Site --';
+        clientSelect.appendChild(defaultOption);
+        
+        // Add client options
+        data.clients.forEach(client => {
+          const option = document.createElement('option');
+          option.value = client.id;
+          option.textContent = client.name;
+          clientSelect.appendChild(option);
+        });
+      }
     } else {
-      // Hide client selector if no clients or single client mode
+      // Hide client selector if no clients
       clientSelector.style.display = 'none';
     }
   } catch (error) {
@@ -97,21 +117,6 @@ async function loadClients() {
 
 // Load clients when page loads
 loadClients();
-
-// Update action text based on mode
-function updateActionText() {
-  if (modeUpdate.checked) {
-    actionText.textContent = 'Update & Process';
-    uploadBtn.querySelector('i').className = 'fas fa-edit';
-  } else {
-    actionText.textContent = 'Upload & Process';
-    uploadBtn.querySelector('i').className = 'fas fa-upload';
-  }
-}
-
-// Listen for mode changes
-modeUpload.addEventListener('change', updateActionText);
-modeUpdate.addEventListener('change', updateActionText);
 
 // Handle form submission
 form.addEventListener('submit', async (e) => {
@@ -135,9 +140,8 @@ form.addEventListener('submit', async (e) => {
     return;
   }
 
-  // Determine endpoint based on mode
-  const isUpdateMode = modeUpdate.checked;
-  const endpoint = isUpdateMode ? '/update' : '/upload';
+  // Always use upload endpoint
+  const endpoint = '/upload';
 
   // Hide previous results/errors
   resultSection.style.display = 'none';
@@ -196,7 +200,7 @@ form.addEventListener('submit', async (e) => {
         showResults(data.result);
       }, 500);
     } else {
-      showError(data.error || (isUpdateMode ? 'Update failed' : 'Upload failed'));
+      showError(data.error || 'Upload failed');
     }
   } catch (error) {
     showError('Error: ' + error.message);

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WordPress Bulk Uploader</title>
+    <title>OMG Nafisa's WordPress Bulk Uploader</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -12,8 +12,8 @@
         <div class="header">
             <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                 <div>
-                    <h1><i class="fas fa-rocket"></i> WordPress Bulk Uploader</h1>
-                    <p>Upload or update blog posts in bulk from CSV</p>
+                    <h1><i class="fas fa-rocket"></i> OMG Nafisa's</h1>
+                    <p>Upload blog posts in bulk from CSV</p>
                 </div>
                 <button id="logoutBtn" class="logout-btn" title="Logout">
                     <i class="fas fa-sign-out-alt"></i> Logout
@@ -22,24 +22,19 @@
         </div>
 
         <div class="upload-section">
-            <div class="mode-selector">
-                <label class="mode-option">
-                    <input type="radio" name="mode" value="upload" id="modeUpload" checked>
-                    <span><i class="fas fa-plus-circle"></i> Create New Posts</span>
-                </label>
-                <label class="mode-option">
-                    <input type="radio" name="mode" value="update" id="modeUpdate">
-                    <span><i class="fas fa-edit"></i> Update Existing Posts</span>
-                </label>
-            </div>
-
             <div id="clientSelector" class="client-selector" style="display: none;">
-                <label for="clientSelect" class="client-label">
-                    <i class="fas fa-server"></i> Select WordPress Site:
-                </label>
-                <select id="clientSelect" name="clientId" class="client-select">
-                    <option value="">Loading clients...</option>
-                </select>
+                <div id="singleClientDisplay" class="single-client-display" style="display: none;">
+                    <i class="fas fa-server"></i>
+                    <span id="singleClientName">WordPress Site</span>
+                </div>
+                <div id="multiClientSelector" style="display: none;">
+                    <label for="clientSelect" class="client-label">
+                        <i class="fas fa-server"></i> Select WordPress Site:
+                    </label>
+                    <select id="clientSelect" name="clientId" class="client-select">
+                        <option value="">Loading clients...</option>
+                    </select>
+                </div>
             </div>
 
             <form id="uploadForm" enctype="multipart/form-data">
@@ -61,7 +56,7 @@
                 </div>
                 
                 <button type="submit" id="uploadBtn" class="upload-btn">
-                    <span class="btn-text"><i class="fas fa-upload"></i> <span id="actionText">Upload & Process</span></span>
+                    <span class="btn-text"><i class="fas fa-upload"></i> Upload & Process</span>
                     <span class="btn-loader" style="display: none;"><i class="fas fa-spinner fa-spin"></i> Processing...</span>
                 </button>
             </form>

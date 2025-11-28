@@ -62,7 +62,7 @@ function getClientConfig(clientId = null) {
     wp_app_password: process.env.WP_APP_PASSWORD || '',
     default_status: process.env.DEFAULT_STATUS || 'draft',
     request_delay_ms: parseInt(process.env.REQUEST_DELAY_MS || '300', 10),
-    name: 'WordPress Site',
+    name: process.env.WP_SITE_NAME || 'WordPress Site',
   };
 }
 
@@ -82,6 +82,16 @@ export function getAvailableClients() {
       console.error('⚠️  Failed to parse CLIENTS_CONFIG:', error.message);
     }
   }
+  
+  // Return single client for single-client mode (if WP_SITE is configured)
+  if (process.env.WP_SITE) {
+    return [{
+      id: 'default',
+      name: process.env.WP_SITE_NAME || 'WordPress Site',
+      wp_site: process.env.WP_SITE,
+    }];
+  }
+  
   return [];
 }
 
