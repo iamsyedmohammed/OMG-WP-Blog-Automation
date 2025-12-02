@@ -15,83 +15,25 @@ dotenv.config();
 
 /**
  * Parse and get client configuration
- * Supports both single-client (WP_SITE, WP_USER, WP_APP_PASSWORD) 
- * and multi-client (CLIENTS_CONFIG) modes
+ * CTS-only mode: uses single-client configuration (WP_SITE, WP_USER, WP_APP_PASSWORD)
  */
 function getClientConfig(clientId = null) {
-  // Check for multi-client configuration
-  if (process.env.CLIENTS_CONFIG) {
-    try {
-      const clientsConfig = JSON.parse(process.env.CLIENTS_CONFIG);
-      
-      // If clientId provided, return that specific client
-      if (clientId && clientsConfig[clientId]) {
-        const client = clientsConfig[clientId];
-        return {
-          wp_site: client.wp_site?.replace(/\/$/, '') || '',
-          wp_user: client.wp_user || '',
-          wp_app_password: client.wp_app_password || '',
-          default_status: client.default_status || 'draft',
-          request_delay_ms: parseInt(client.request_delay_ms || '300', 10),
-          name: client.name || clientId,
-        };
-      }
-      
-      // If no clientId, return first client or null
-      const firstClientId = Object.keys(clientsConfig)[0];
-      if (firstClientId) {
-        const client = clientsConfig[firstClientId];
-        return {
-          wp_site: client.wp_site?.replace(/\/$/, '') || '',
-          wp_user: client.wp_user || '',
-          wp_app_password: client.wp_app_password || '',
-          default_status: client.default_status || 'draft',
-          request_delay_ms: parseInt(client.request_delay_ms || '300', 10),
-          name: client.name || firstClientId,
-        };
-      }
-    } catch (error) {
-      console.error('⚠️  Failed to parse CLIENTS_CONFIG:', error.message);
-    }
-  }
-  
-  // Fall back to single-client configuration
+  // CTS-only: Always use single-client configuration
   return {
     wp_site: process.env.WP_SITE?.replace(/\/$/, '') || '',
     wp_user: process.env.WP_USER || '',
     wp_app_password: process.env.WP_APP_PASSWORD || '',
     default_status: process.env.DEFAULT_STATUS || 'draft',
     request_delay_ms: parseInt(process.env.REQUEST_DELAY_MS || '300', 10),
-    name: process.env.WP_SITE_NAME || 'WordPress Site',
+    name: 'OMG Nafisas',
   };
 }
 
 /**
  * Get all available clients
+ * CTS-only mode: returns empty array (no client selection needed)
  */
 export function getAvailableClients() {
-  if (process.env.CLIENTS_CONFIG) {
-    try {
-      const clientsConfig = JSON.parse(process.env.CLIENTS_CONFIG);
-      return Object.entries(clientsConfig).map(([id, config]) => ({
-        id,
-        name: config.name || id,
-        wp_site: config.wp_site,
-      }));
-    } catch (error) {
-      console.error('⚠️  Failed to parse CLIENTS_CONFIG:', error.message);
-    }
-  }
-  
-  // Return single client for single-client mode (if WP_SITE is configured)
-  if (process.env.WP_SITE) {
-    return [{
-      id: 'default',
-      name: process.env.WP_SITE_NAME || 'WordPress Site',
-      wp_site: process.env.WP_SITE,
-    }];
-  }
-  
   return [];
 }
 
@@ -140,6 +82,22 @@ const api = axios.create({
 let logResults = [];
 let startTime = Date.now();
 
+const logFile = path.join(__dirname, 'upload_debug.log');
+const originalLog = console.log;
+const originalError = console.error;
+
+console.log = function (...args) {
+  const message = args.map(arg => String(arg)).join(' ');
+  fs.appendFileSync(logFile, message + '\n');
+  originalLog.apply(console, args);
+};
+
+console.error = function (...args) {
+  const message = args.map(arg => String(arg)).join(' ');
+  fs.appendFileSync(logFile, 'ERROR: ' + message + '\n');
+  originalError.apply(console, args);
+};
+
 /**
  * Sleep for specified milliseconds
  */
@@ -157,7 +115,7 @@ function promptForCsvPath(defaultPath) {
       output: process.stdout
     });
 
-    const promptText = defaultPath 
+    const promptText = defaultPath
       ? `\n📁 Enter CSV file path [${defaultPath}]: `
       : '\n📁 Enter CSV file path: ';
 
@@ -177,10 +135,10 @@ async function loadCsv(filePath) {
   return new Promise((resolve, reject) => {
     const results = [];
     // Support both absolute and relative paths
-    const fullPath = path.isAbsolute(filePath) 
-      ? filePath 
+    const fullPath = path.isAbsolute(filePath)
+      ? filePath
       : path.resolve(__dirname, filePath);
-    
+
     if (!fs.existsSync(fullPath)) {
       reject(new Error(`CSV file not found: ${fullPath}`));
       return;
@@ -233,7 +191,7 @@ async function getOrCreateTerm(name, taxonomy = 'categories', apiInstance = api,
   const trimmedName = name.trim();
   const currentApi = apiInstance || api;
   const config = clientConfig || defaultConfig;
-  
+
   try {
     // Search for existing term
     const searchResponse = await currentApi.get(`/${taxonomy}`, {
@@ -291,17 +249,82 @@ async function downloadImageFromUrl(imageUrl) {
     const response = await axios.get(imageUrl, {
       responseType: 'arraybuffer',
       timeout: 30000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
     });
-    
+
+    const contentType = response.headers['content-type'];
+
+    // Check for HTML content (indicates error/login page)
+    if (contentType && contentType.includes('text/html')) {
+      console.warn(`⚠️  Downloaded content is HTML, not an image. This usually means the Google Drive link is private.`);
+      console.warn(`   URL: ${imageUrl}`);
+      console.warn(`   Action: Please change permissions to "Anyone with the link" on Google Drive.`);
+      return null;
+    }
+
+    let fileName = 'image.jpg';
+    const contentDisposition = response.headers['content-disposition'];
+
+    // Try to get filename from Content-Disposition
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+      if (filenameMatch && filenameMatch[1]) {
+        fileName = filenameMatch[1];
+      }
+    } else {
+      // Fallback to URL path
+      const urlPath = new URL(imageUrl).pathname;
+      fileName = path.basename(urlPath) || 'image';
+    }
+
+    // Ensure filename has correct extension based on Content-Type
+    const extFromMime = mime.extension(contentType);
+    if (extFromMime) {
+      const currentExt = path.extname(fileName).replace('.', '');
+      if (currentExt !== extFromMime) {
+        // If no extension or wrong extension, append the correct one
+        if (!currentExt || currentExt === 'uc') { // 'uc' is common for GDrive export links
+          fileName = `${fileName}.${extFromMime}`;
+        } else {
+          // Replace extension
+          fileName = fileName.replace(new RegExp(`\\.${currentExt}$`), `.${extFromMime}`);
+        }
+      }
+    }
+
     return {
       buffer: Buffer.from(response.data),
-      mimeType: response.headers['content-type'] || mime.lookup(imageUrl) || 'image/jpeg',
-      fileName: path.basename(new URL(imageUrl).pathname) || 'image.jpg',
+      mimeType: contentType || mime.lookup(imageUrl) || 'image/jpeg',
+      fileName: fileName,
     };
   } catch (error) {
     console.error(`⚠️  Failed to download image from URL "${imageUrl}": ${error.message}`);
     return null;
   }
+}
+
+/**
+ * Convert Google Drive URL to direct download URL
+ */
+function convertGoogleDriveUrl(url) {
+  if (!url) return url;
+
+  // Check if it's a Google Drive URL
+  if (url.includes('drive.google.com')) {
+    // Try to extract the ID
+    // Matches /file/d/ID/view or /open?id=ID
+    const idMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+
+    if (idMatch && idMatch[1]) {
+      const fileId = idMatch[1];
+      console.log(`   🔄 Converting Google Drive URL to direct link (ID: ${fileId})`);
+      return `https://drive.google.com/uc?export=download&id=${fileId}`;
+    }
+  }
+
+  return url;
 }
 
 /**
@@ -312,20 +335,24 @@ async function uploadMedia(filePathOrUrl, apiInstance = api) {
   if (!filePathOrUrl || !filePathOrUrl.trim()) return null;
 
   let fileBuffer, fileName, mimeType;
+  let processedUrl = filePathOrUrl.trim();
 
   // Check if it's a URL (starts with http:// or https://)
-  if (filePathOrUrl.trim().startsWith('http://') || filePathOrUrl.trim().startsWith('https://')) {
+  if (processedUrl.startsWith('http://') || processedUrl.startsWith('https://')) {
+    // Handle Google Drive URLs
+    processedUrl = convertGoogleDriveUrl(processedUrl);
+
     // Download from URL
-    const downloaded = await downloadImageFromUrl(filePathOrUrl.trim());
+    const downloaded = await downloadImageFromUrl(processedUrl);
     if (!downloaded) return null;
-    
+
     fileBuffer = downloaded.buffer;
     fileName = downloaded.fileName;
     mimeType = downloaded.mimeType;
   } else {
     // Local file path
-    const fullPath = path.resolve(__dirname, filePathOrUrl);
-    
+    const fullPath = path.resolve(__dirname, processedUrl);
+
     if (!fs.existsSync(fullPath)) {
       console.error(`⚠️  Image file not found: ${fullPath}`);
       return null;
@@ -339,7 +366,7 @@ async function uploadMedia(filePathOrUrl, apiInstance = api) {
   try {
     const config = defaultConfig;
     await sleep(config.request_delay_ms);
-    
+
     const response = await currentApi.post('/media', fileBuffer, {
       headers: {
         'Content-Type': mimeType,
@@ -413,7 +440,7 @@ async function findPostByTitle(title, apiInstance = api) {
 
     const normalizedSearchTitle = normalizeTitle(title);
     console.log(`🔍 Searching for duplicate. Normalized title: "${normalizedSearchTitle}"`);
-    
+
     // Paginate through ALL posts (including drafts) to check for duplicates
     // WordPress search API might not return drafts, so we check all posts directly
     let page = 1;
@@ -423,7 +450,7 @@ async function findPostByTitle(title, apiInstance = api) {
 
     while (hasMore) {
       const response = await currentApi.get('/posts', {
-        params: { 
+        params: {
           per_page: perPage,
           page: page,
           status: 'any', // Include all statuses: publish, draft, private, pending, future
@@ -445,20 +472,20 @@ async function findPostByTitle(title, apiInstance = api) {
         // Try multiple ways to get the title
         const postTitleRaw = post.title?.rendered || post.title?.raw || post.title || '';
         const postTitleNormalized = normalizeTitle(postTitleRaw);
-        
+
         // Debug: log posts that might match (to reduce noise but still catch issues)
         const isMatch = postTitleNormalized === normalizedSearchTitle;
-        const mightMatch = postTitleNormalized.includes('weekend brunch') || 
-                          postTitleNormalized.includes('nafisa') ||
-                          postTitleRaw.toLowerCase().includes('weekend brunch');
-        
+        const mightMatch = postTitleNormalized.includes('weekend brunch') ||
+          postTitleNormalized.includes('nafisa') ||
+          postTitleRaw.toLowerCase().includes('weekend brunch');
+
         if (isMatch || mightMatch) {
           console.log(`  📝 Post ID ${post.id} (${post.status}): "${postTitleRaw}"`);
           console.log(`     Normalized: "${postTitleNormalized}"`);
           console.log(`     Search for: "${normalizedSearchTitle}"`);
           console.log(`     Match: ${isMatch ? '✅ YES - DUPLICATE FOUND!' : '❌ NO'}`);
         }
-        
+
         if (isMatch) {
           console.log(`✅ FOUND DUPLICATE! Post ID ${post.id} (status: ${post.status}) has matching title: "${postTitleRaw}"`);
           return post.id;
@@ -562,6 +589,40 @@ async function createOrUpdatePost(row, rowNumber, progressCallback = null, apiIn
       }
     }
 
+    // Handle Meta Title, Description, and Focus Keyword
+    const metaTitle = row.meta_title?.trim();
+    const metaDesc = row.meta_description?.trim();
+    const focusKw = row.focus_keyword?.trim();
+
+    if (metaTitle || metaDesc || focusKw) {
+      // When using register_rest_field (via our helper plugin), these must be top-level fields
+
+      if (metaTitle) {
+        // Generic
+        postData.meta_title = metaTitle;
+        // Yoast SEO
+        postData._yoast_wpseo_title = metaTitle;
+        // Rank Math
+        postData.rank_math_title = metaTitle;
+      }
+
+      if (metaDesc) {
+        // Generic
+        postData.meta_description = metaDesc;
+        // Yoast SEO
+        postData._yoast_wpseo_metadesc = metaDesc;
+        // Rank Math
+        postData.rank_math_description = metaDesc;
+      }
+
+      if (focusKw) {
+        // Yoast SEO
+        postData._yoast_wpseo_focuskw = focusKw;
+        // Rank Math
+        postData.rank_math_focus_keyword = focusKw;
+      }
+    }
+
     // Check for existing post by title first (prevent duplicates)
     // This check happens BEFORE creating the post to prevent duplicate creation
     console.log(`[${rowNumber}] 🔍 Checking for duplicate post with title: "${postData.title}"`);
@@ -625,7 +686,7 @@ async function main() {
 
   // Get CSV path: command-line argument > interactive prompt (with env as suggestion) > default
   let csvPath;
-  
+
   // If command-line argument provided, use it directly (skip prompt)
   if (process.argv[2]) {
     csvPath = process.argv[2];
@@ -673,7 +734,7 @@ async function main() {
   // Write log file
   // Use /tmp on Vercel (serverless), or __dirname for local development
   const isVercel = process.env.VERCEL || process.env.VERCEL_ENV;
-  const logPath = isVercel 
+  const logPath = isVercel
     ? path.join('/tmp', 'import_log.json')
     : path.resolve(__dirname, 'import_log.json');
   fs.writeFileSync(logPath, JSON.stringify(logResults, null, 2));
@@ -707,7 +768,7 @@ export async function processCsvFile(csvPath, progressCallback = null, clientId 
   // Get client configuration
   const clientConfig = getClientConfig(clientId);
   const clientApi = createApiInstance(clientConfig);
-  
+
   // Override the global api instance for this run
   const originalApi = api;
   Object.setPrototypeOf(clientApi, api);
@@ -744,10 +805,10 @@ export async function processCsvFile(csvPath, progressCallback = null, clientId 
   // Write log file
   // Use /tmp on Vercel (serverless), or __dirname for local development
   const isVercel = process.env.VERCEL || process.env.VERCEL_ENV;
-  const logPath = isVercel 
+  const logPath = isVercel
     ? path.join('/tmp', 'import_log.json')
     : path.resolve(__dirname, 'import_log.json');
-  
+
   try {
     fs.writeFileSync(logPath, JSON.stringify(logResults, null, 2));
   } catch (error) {
