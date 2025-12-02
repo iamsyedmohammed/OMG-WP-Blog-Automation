@@ -25,7 +25,7 @@ function getClientConfig(clientId = null) {
     wp_app_password: process.env.WP_APP_PASSWORD || '',
     default_status: process.env.DEFAULT_STATUS || 'draft',
     request_delay_ms: parseInt(process.env.REQUEST_DELAY_MS || '300', 10),
-    name: 'OMG Nafisas',
+    name: 'CTS',
   };
 }
 
@@ -82,19 +82,31 @@ const api = axios.create({
 let logResults = [];
 let startTime = Date.now();
 
-const logFile = path.join(__dirname, 'upload_debug.log');
+const isVercel = process.env.VERCEL || process.env.VERCEL_ENV;
+const logFile = isVercel
+  ? path.join('/tmp', 'upload_debug.log')
+  : path.join(__dirname, 'upload_debug.log');
+
 const originalLog = console.log;
 const originalError = console.error;
 
 console.log = function (...args) {
   const message = args.map(arg => String(arg)).join(' ');
-  fs.appendFileSync(logFile, message + '\n');
+  try {
+    fs.appendFileSync(logFile, message + '\n');
+  } catch (e) {
+    // Ignore file write errors (e.g. if /tmp is full or inaccessible)
+  }
   originalLog.apply(console, args);
 };
 
 console.error = function (...args) {
   const message = args.map(arg => String(arg)).join(' ');
-  fs.appendFileSync(logFile, 'ERROR: ' + message + '\n');
+  try {
+    fs.appendFileSync(logFile, 'ERROR: ' + message + '\n');
+  } catch (e) {
+    // Ignore file write errors
+  }
   originalError.apply(console, args);
 };
 
